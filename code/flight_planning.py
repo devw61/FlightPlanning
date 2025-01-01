@@ -1,9 +1,10 @@
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 import os
 import aiohttp
 import asyncio
+from sklearn.preprocessing import MinMaxScaler
 
 def get_amadeus_session_token(client_id, client_secret):
     url = "https://test.api.amadeus.com/v1/security/oauth2/token"
@@ -53,7 +54,7 @@ async def get_pricing_responses(token_info, flights):
     headers = {"Authorization": f"Bearer {token_info}"}
     print("Fetching pricing data...")
     async with aiohttp.ClientSession() as session:
-        tasks = [fetch_pricing(session, url, headers, flight, i * 1) for i, flight in enumerate(flights) if i < 10]  # only do the first 10, rest 
+        tasks = [fetch_pricing(session, url, headers, flight, i * 1) for i, flight in enumerate(flights) if i < 10]  # only do the first 10 
         return await asyncio.gather(*tasks)
     
 def format_flight_data(flight_data):
@@ -109,10 +110,14 @@ for jsonified in pricing_responses:
 flight_pricing_df = format_flight_data(pricing_flight_data)
 
 flight_pricing_df['price'] = flight_pricing_df['price'].astype(float)
-if input("Would you like to sort by price or duration? (p/d): ") == 'p':
-    sorted_flight_pricing_df = flight_pricing_df.sort_values(by=['price', 'trip_total_duration'])
-else :
-    sorted_flight_pricing_df = flight_pricing_df.sort_values(by=['trip_total_duration', 'price'])
+
+scaler = MinMaxScaler()
+flight_pricing_df[['normalized_duration', 'normalized_price']] = scaler.fit_transform(flight_pricing_df[['trip_total_duration', 'price']].apply(pd.to_numeric))
+
+flight_pricing_df['normalized_sum'] = flight_pricing_df['normalized_duration'] + flight_pricing_df['normalized_price']
+
+sorted_flight_pricing_df = flight_pricing_df.sort_values(by='normalized_sum')
+sorted_flight_pricing_df = sorted_flight_pricing_df.drop(columns=['normalized_duration', 'normalized_price', 'normalized_sum'])
 
 print(sorted_flight_pricing_df.head(10).to_string(index=False))
 
